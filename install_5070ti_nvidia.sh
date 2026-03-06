@@ -314,12 +314,39 @@ build_nvidia() {
 install_packages() {
     echo -e "\n${BOLD}=== Phase 5: Install Packages ===${RESET}\n"
 
-    # Verify each expected package was actually produced
+    # xbps-src places nonfree packages (nvidia is restricted) under
+    # hostdir/binpkgs/nonfree rather than hostdir/binpkgs.
+    # Both directories need a valid <arch>-repodata index file for
+    # xbps-install --repository to accept them.  xbps-src generates these
+    # automatically at the end of a successful build.
+    local BINPKGS_NONFREE="$BINPKGS_DIR/nonfree"
+
+    info "Build output directories:"
+    info "  main:    ${BINPKGS_DIR}"
+    info "  nonfree: ${BINPKGS_NONFREE}"
+
+    # Confirm the nonfree repodata index exists — if it doesn't, the build
+    # either failed silently or xbps-src wrote packages to an unexpected path.
+    if [[ ! -f "$BINPKGS_NONFREE/$(uname -m)-repodata" ]]; then
+        # Print what is actually in hostdir/binpkgs to aid diagnosis
+        warn "Expected repodata not found at: ${BINPKGS_NONFREE}/$(uname -m)-repodata"
+        warn "Contents of ${BINPKGS_DIR}:"
+        find "$BINPKGS_DIR" -maxdepth 2 \( -name "*.xbps" -o -name "*-repodata" \) \
+            2>/dev/null | sort | sed 's/^/    /' || true
+        die "No repodata index found — the build may not have completed successfully.\n" \
+            "      Check xbps-src output above, or look in: ${BINPKGS_DIR}"
+    fi
+
+    # Verify each expected package file was actually produced, searching both
+    # the root and nonfree subdirectories.
     local pkgs_to_install=(nvidia nvidia-utils nvidia-settings)
     for pkg in "${pkgs_to_install[@]}"; do
-        if ! ls "$BINPKGS_DIR"/${pkg}-*.xbps &>/dev/null && \
-           ! ls "$BINPKGS_DIR"/nonfree/${pkg}-*.xbps &>/dev/null; then
-            die "Built package not found for '${pkg}' in ${BINPKGS_DIR}.\n" \
+        if ! find "$BINPKGS_DIR" -maxdepth 2 -name "${pkg}-*.xbps" 2>/dev/null \
+                | grep -q .; then
+            warn "Package file not found for '${pkg}' — listing all built .xbps files:"
+            find "$BINPKGS_DIR" -maxdepth 2 -name "*.xbps" 2>/dev/null \
+                | sort | sed 's/^/    /' || true
+            die "Built package '${pkg}' not found in ${BINPKGS_DIR}.\n" \
                 "      Check the xbps-src output above for build errors."
         fi
     done
@@ -329,11 +356,33 @@ install_packages() {
     xbps-install -Sy void-repo-nonfree || true
     xbps-install -Sy
 
+    # Locally built xbps-src packages are unsigned. xbps-install refuses
+    # unsigned remote repos by default, but local filesystem paths are
+    # accepted without a signature when passed via --repository.
+    # We also write an explicit xbps.d fragment pointing at both local repo
+    # directories so xbps treats them as trusted local sources for this
+    # install, then remove the fragment afterwards.
+    local XBPS_CONF="/etc/xbps.d/99-nvidia-local-repo.conf"
+    info "Registering local repository with xbps..."
+    cat > "$XBPS_CONF" <<EOF
+repository=${BINPKGS_DIR}
+repository=${BINPKGS_NONFREE}
+EOF
+
+    # Sync so xbps picks up the new repo entries
+    xbps-install -Sy
+
     info "Installing built packages from local repository..."
+    local install_status=0
     xbps-install -Sy \
         --repository="$BINPKGS_DIR" \
-        --repository="$BINPKGS_DIR/nonfree" \
-        "${pkgs_to_install[@]}"
+        --repository="$BINPKGS_NONFREE" \
+        "${pkgs_to_install[@]}" || install_status=$?
+
+    # Always clean up the temporary repo config regardless of outcome
+    rm -f "$XBPS_CONF"
+
+    [[ $install_status -eq 0 ]] || die "xbps-install failed with status ${install_status}."
 
     success "NVIDIA packages installed."
 }
