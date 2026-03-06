@@ -325,11 +325,18 @@ install_packages() {
     info "  main:    ${BINPKGS_DIR}"
     info "  nonfree: ${BINPKGS_NONFREE}"
 
+    # xbps-src names the repodata file after the full xbps architecture string,
+    # which includes the libc suffix on Void: e.g. "x86_64-glibc-repodata",
+    # not just "x86_64-repodata" as uname -m would suggest.
+    # Derive it the same way xbps-uhelper does.
+    local XBPS_ARCH
+    XBPS_ARCH=$(xbps-uhelper arch 2>/dev/null || echo "x86_64-glibc")
+
     # Confirm the nonfree repodata index exists — if it doesn't, the build
     # either failed silently or xbps-src wrote packages to an unexpected path.
-    if [[ ! -f "$BINPKGS_NONFREE/$(uname -m)-repodata" ]]; then
+    if [[ ! -f "$BINPKGS_NONFREE/${XBPS_ARCH}-repodata" ]]; then
         # Print what is actually in hostdir/binpkgs to aid diagnosis
-        warn "Expected repodata not found at: ${BINPKGS_NONFREE}/$(uname -m)-repodata"
+        warn "Expected repodata not found at: ${BINPKGS_NONFREE}/${XBPS_ARCH}-repodata"
         warn "Contents of ${BINPKGS_DIR}:"
         find "$BINPKGS_DIR" -maxdepth 2 \( -name "*.xbps" -o -name "*-repodata" \) \
             2>/dev/null | sort | sed 's/^/    /' || true
