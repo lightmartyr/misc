@@ -25,6 +25,10 @@ success() { echo -e "${GREEN}[OK]${RESET}    $*"; }
 warn()    { echo -e "${YELLOW}[WARN]${RESET}  $*"; }
 die()     { echo -e "${RED}[ERROR]${RESET} $*" >&2; exit 1; }
 
+# Run a command as the unprivileged build user.
+# xbps-src refuses to run as root; we drop to BUILD_USER for all build steps.
+as_user() { sudo -u "$BUILD_USER" env HOME="$BUILD_USER_HOME" "$@"; }
+
 # ------------------------------------------------------------------------------
 # PHASE 1: PRE-FLIGHT CHECKS
 # ------------------------------------------------------------------------------
@@ -34,6 +38,29 @@ preflight_checks() {
     # Must run as root
     [[ "$EUID" -eq 0 ]] || die "This script must be run as root (sudo or su)."
     success "Running as root."
+
+    # Identify the unprivileged user to run xbps-src as.
+    # xbps-src hard-refuses to run as root, so all build steps are executed
+    # under this user via 'sudo -u'.
+    #
+    # Resolution order:
+    #   1. $SUDO_USER  — set automatically when the script is invoked via sudo
+    #   2. $DOAS_USER  — set by doas (openbsd-style sudo alternative)
+    #   3. Prompt the user to supply a username
+    if [[ -n "${SUDO_USER:-}" && "$SUDO_USER" != "root" ]]; then
+        BUILD_USER="$SUDO_USER"
+    elif [[ -n "${DOAS_USER:-}" && "$DOAS_USER" != "root" ]]; then
+        BUILD_USER="$DOAS_USER"
+    else
+        echo -e "${YELLOW}Could not detect the invoking non-root user automatically.${RESET}"
+        read -rp "Enter the username to run xbps-src as: " BUILD_USER
+        [[ -n "$BUILD_USER" ]] || die "No build user supplied."
+        id "$BUILD_USER" &>/dev/null || die "User '${BUILD_USER}' does not exist."
+    fi
+
+    BUILD_USER_HOME=$(getent passwd "$BUILD_USER" | cut -d: -f6)
+    [[ -n "$BUILD_USER_HOME" ]] || die "Could not determine home directory for '${BUILD_USER}'."
+    success "Build user: ${BUILD_USER} (home: ${BUILD_USER_HOME})"
 
     # Must be Void Linux
     [[ -f /etc/os-release ]] || die "Cannot detect OS. /etc/os-release not found."
@@ -235,16 +262,19 @@ remove_existing_nvidia() {
 build_nvidia() {
     echo -e "\n${BOLD}=== Phase 4: Clone & Build nvidia (PR #56685) ===${RESET}\n"
 
-    BUILD_DIR="$(pwd)/void-packages-nvidia-open"
+    # Place the build tree in the build user's home so they own it.
+    # xbps-src also writes to $HOME/.xbps-src, so running under the correct
+    # user home is important.
+    BUILD_DIR="$BUILD_USER_HOME/void-packages-nvidia-open"
 
     if [[ -d "$BUILD_DIR" ]]; then
         warn "Build directory '${BUILD_DIR}' already exists."
         info "Resetting to latest upstream state of branch nvidia-open..."
-        git -C "$BUILD_DIR" fetch origin
-        git -C "$BUILD_DIR" reset --hard origin/nvidia-open
+        as_user git -C "$BUILD_DIR" fetch origin
+        as_user git -C "$BUILD_DIR" reset --hard origin/nvidia-open
     else
         info "Cloning fvalasiad/void-packages (branch: nvidia-open)..."
-        git clone \
+        as_user git clone \
             --depth=1 \
             --branch nvidia-open \
             https://github.com/fvalasiad/void-packages.git \
@@ -253,16 +283,17 @@ build_nvidia() {
 
     success "Source tree ready at: ${BUILD_DIR}"
 
-    # Bootstrap xbps-src (creates the build chroot / masterdir)
+    # Bootstrap xbps-src (creates the build chroot / masterdir).
+    # Must run as the unprivileged build user — xbps-src refuses root.
     info "Bootstrapping xbps-src (this may take several minutes)..."
-    "$BUILD_DIR/xbps-src" binary-bootstrap
+    as_user "$BUILD_DIR/xbps-src" binary-bootstrap
     success "xbps-src bootstrap complete."
 
     # Allow restricted (nonfree) packages inside the build environment so the
     # nvidia template can pull its precompiled user-space blobs.
     if ! grep -q 'XBPS_ALLOW_RESTRICTED=yes' "$BUILD_DIR/etc/conf" 2>/dev/null; then
         info "Enabling restricted packages in xbps-src..."
-        echo "XBPS_ALLOW_RESTRICTED=yes" >> "$BUILD_DIR/etc/conf"
+        as_user bash -c "echo 'XBPS_ALLOW_RESTRICTED=yes' >> '$BUILD_DIR/etc/conf'"
     fi
 
     # Build the nvidia package.
@@ -271,7 +302,7 @@ build_nvidia() {
     # source kernel module source (driver 590.48.01 at time of writing).
     info "Building nvidia package — driver 590.48.01 (open kernel modules)..."
     info "This will take several minutes..."
-    "$BUILD_DIR/xbps-src" pkg -f nvidia
+    as_user "$BUILD_DIR/xbps-src" pkg -f nvidia
 
     success "Build finished."
     BINPKGS_DIR="$BUILD_DIR/hostdir/binpkgs"
