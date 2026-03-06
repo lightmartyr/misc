@@ -270,63 +270,78 @@ build_nvidia() {
 install_packages() {
     echo -e "\n${BOLD}=== Phase 5: Install Packages ===${RESET}\n"
 
-    # Get xbps architecture string (e.g., x86_64-glibc)
-    local XBPS_ARCH
-    XBPS_ARCH=$(xbps-uhelper arch 2>/dev/null || echo "x86_64-glibc")
+    # Find the actual repodata files and .xbps packages dynamically
+    info "Searching for built packages in ${BINPKGS_DIR}..."
 
-    info "Build output directories:"
-    info "  main:     ${BINPKGS_DIR}"
-    info "  nvidia-open: ${BINPKGS_OPEN}"
+    # Find all repodata files
+    local repodata_files
+    repodata_files=$(find "$BINPKGS_DIR" -maxdepth 2 -name "*-repodata" 2>/dev/null || true)
 
-    # Verify repodata exists
-    if [[ ! -f "$BINPKGS_OPEN/${XBPS_ARCH}-repodata" ]]; then
-        warn "Expected repodata not found at: ${BINPKGS_OPEN}/${XBPS_ARCH}-repodata"
-        warn "Contents of ${BINPKGS_DIR}:"
-        find "$BINPKGS_DIR" -maxdepth 2 \( -name "*.xbps" -o -name "*-repodata" \) \
-            2>/dev/null | sort | sed 's/^/    /' || true
-        die "No repodata index found."
+    if [[ -z "$repodata_files" ]]; then
+        die "No repodata files found in ${BINPKGS_DIR}. Build may have failed."
     fi
 
-    # Verify packages were built
-    local pkgs_to_check=(nvidia-open-dkms)
-    for pkg in "${pkgs_to_check[@]}"; do
-        if ! find "$BINPKGS_DIR" -maxdepth 2 -name "${pkg}-*.xbps" 2>/dev/null \
-                | grep -q .; then
-            warn "Package not found: ${pkg}"
-            find "$BINPKGS_DIR" -maxdepth 2 -name "*.xbps" 2>/dev/null \
-                | sort | sed 's/^/    /' || true
-            die "Built package '${pkg}' not found."
-        fi
+    info "Found repodata files:"
+    echo "$repodata_files" | sed 's/^/    /'
+
+    # Find all .xbps package files
+    local xbps_files
+    xbps_files=$(find "$BINPKGS_DIR" -maxdepth 3 -name "*.xbps" 2>/dev/null || true)
+
+    if [[ -z "$xbps_files" ]]; then
+        die "No .xbps package files found in ${BINPKGS_DIR}. Build may have failed."
+    fi
+
+    info "Found .xbps packages:"
+    echo "$xbps_files" | sed 's/^/    /'
+
+    # Extract unique directories containing repodata (these are our repo paths)
+    local repo_dirs=()
+    while IFS= read -r line; do
+        local dir
+        dir=$(dirname "$line")
+        repo_dirs+=("$dir")
+    done < <(echo "$repodata_files" | sort -u)
+
+    if [[ ${#repo_dirs[@]} -eq 0 ]]; then
+        die "Could not determine repository directories."
+    fi
+
+    info "Repository directories:"
+    for d in "${repo_dirs[@]}"; do
+        info "    $d"
     done
+
+    # Check for nvidia-open-dkms package
+    if ! echo "$xbps_files" | grep -q "nvidia-open-dkms"; then
+        die "nvidia-open-dkms package not found."
+    fi
 
     # Enable nonfree repo for nvidia user-space libs
     info "Enabling nonfree repository..."
     xbps-install -Sy void-repo-nonfree || true
     xbps-install -Sy
 
-    # Register local repo
+    # Register all local repos
     local XBPS_CONF="/etc/xbps.d/99-nvidia-local-repo.conf"
-    info "Registering local repository..."
-    cat > "$XBPS_CONF" <<EOF
-repository=${BINPKGS_DIR}
-repository=${BINPKGS_OPEN}
-EOF
+    info "Registering local repositories..."
+    {
+        for d in "${repo_dirs[@]}"; do
+            echo "repository=$d"
+        done
+    } > "$XBPS_CONF"
+
+    cat "$XBPS_CONF" | sed 's/^/    /'
 
     xbps-install -Sy
 
-    # Install nvidia first (user-space libs), then nvidia-open-dkms (kernel modules)
+    # Install nvidia first (user-space libs), then nvidia-open-dkms
     info "Installing nvidia (user-space libraries)..."
-    xbps-install -Sy \
-        --repository="$BINPKGS_DIR" \
-        --repository="$BINPKGS_OPEN" \
-        nvidia
+    xbps-install -Sy nvidia
 
     info "Installing nvidia-open-dkms (open kernel modules)..."
     local install_status=0
-    xbps-install -Sy \
-        --repository="$BINPKGS_DIR" \
-        --repository="$BINPKGS_OPEN" \
-        nvidia-open-dkms || install_status=$?
+    xbps-install -Sy nvidia-open-dkms || install_status=$?
 
     rm -f "$XBPS_CONF"
 
