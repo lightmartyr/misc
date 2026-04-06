@@ -1,0 +1,10 @@
+{
+    "window.autoDetectColorScheme": true,
+    "explorer.confirmDelete": false,
+    "workbench.preferredDarkColorTheme": "Dynamic Base16 DankShell",
+    "workbench.iconTheme": "material-icon-theme",
+    "editor.fontFamily": "'FiraCode Nerd Font Mono'",
+    "material-icon-theme.files.color": "{{colors.primary.default.hex}}",
+    "material-icon-theme.rootFolders.color": "{{colors.primary.default.hex}}",
+    "material-icon-theme.folders.color": "{{colors.primary.default.hex}}"
+}
