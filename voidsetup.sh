@@ -82,7 +82,9 @@ if [ -f /etc/mango/config.conf ]; then
     cp /etc/mango/config.conf "$HOME/.config/mango/config.conf"
 fi
 # Prepend environment sourcing
-echo ". \$HOME/.config/environment" | cat - "$HOME/.config/mango/config.conf" > temp && mv temp "$HOME/.config/mango/config.conf"
+if [ -f "$HOME/.config/mango/config.conf" ]; then
+    echo ". \$HOME/.config/environment" | cat - "$HOME/.config/mango/config.conf" > temp && mv temp "$HOME/.config/mango/config.conf"
+fi
 
 echo "--- Setup Complete ---"
 echo "Don't forget to run 'sudo dracut -f' after you finish your NVIDIA driver install."
