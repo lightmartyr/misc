@@ -1,9 +1,0 @@
-[config]
-
-[templates.vscode-icons]
-input_path = '/home/richard/.config/matugen/templates/vscode-icons.json'
-output_path = '/home/richard/.config/Code - OSS/User/settings.json'
-
-[templates.starship]
-input_path = '/home/richard/.config/matugen/templates/starship-template.toml'
-output_path = '/home/richard/.config/starship.toml'
