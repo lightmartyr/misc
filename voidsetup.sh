@@ -104,4 +104,3 @@ if [ -f "$HOME/.config/mango/config.conf" ]; then
 fi
 
 echo "--- Setup Complete ---"
-echo "Don't forget to run 'sudo dracut -f' after you finish your NVIDIA driver install."
