@@ -1,0 +1,48 @@
+# Reference: https://iniox.github.io/#matugen/templates
+
+format = """
+$os\
+$directory\
+$git_branch\
+$git_status\
+$python\
+$rust\
+$golang\
+$line_break\
+$character"""
+
+[os]
+disabled = false
+# Wrap the OS and Directory in the first pill
+format = "[](fg:{{colors.primary.default.hex}})[$symbol](bg:{{colors.primary.default.hex}} fg:{{colors.on_primary.default.hex}})"
+symbols.Void = " "
+
+[directory]
+style = "bg:{{colors.primary.default.hex}} fg:{{colors.on_primary.default.hex}}"
+# The closing pill character is here because directory is almost always present
+format = "[$path]($style)[](fg:{{colors.primary.default.hex}}) "
+
+[git_branch]
+symbol = " "
+style = "bg:{{colors.surface_variant.default.hex}} fg:{{colors.on_surface_variant.default.hex}}"
+# The rounded ends only appear if you are in a git repo
+format = "[](fg:{{colors.surface_variant.default.hex}})[$symbol$branch]($style)"
+
+[git_status]
+style = "bg:{{colors.surface_variant.default.hex}} fg:{{colors.on_surface_variant.default.hex}}"
+# If there's no status, it just closes the pill
+format = "[[$all_status$ahead_behind]($style)][](fg:{{colors.surface_variant.default.hex}}) "
+
+[python]
+symbol = " "
+style = "bg:{{colors.secondary_container.default.hex}} fg:{{colors.on_secondary_container.default.hex}}"
+format = "[](fg:{{colors.secondary_container.default.hex}})[$symbol($version)]($style)[](fg:{{colors.secondary_container.default.hex}}) "
+
+[rust]
+symbol = " "
+style = "bg:{{colors.secondary_container.default.hex}} fg:{{colors.on_secondary_container.default.hex}}"
+format = "[](fg:{{colors.secondary_container.default.hex}})[$symbol($version)]($style)[](fg:{{colors.secondary_container.default.hex}}) "
+
+[character]
+success_symbol = "[ 󱞪](bold {{colors.secondary.default.hex}})"
+error_symbol = "[ 󱞪](bold {{colors.error.default.hex}})"
