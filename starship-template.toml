@@ -1,4 +1,5 @@
 # Reference: https://iniox.github.io/#matugen/templates
+# QT_LOGGING_RULES=*.debug=false
 
 format = """
 $os\
