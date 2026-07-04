@@ -67,7 +67,7 @@ MAKEOPTS="-j$(nproc)"
 CHOST="x86_64-pc-linux-gnu"
 
 # Clean global flags for a modern systemd + wayland + pipewire audio stack
-USE="wayland pipewire gles2 vulkan systemd dbus unicode icu policykit -X -elogind -openrc -gnome -kde"
+USE="wayland pipewire gles2 vulkan systemd dbus unicode icu policykit pam -X -elogind -openrc -gnome -kde"
 
 ACCEPT_LICENSE="*"
 GRUB_PLATFORMS=""
@@ -136,26 +136,43 @@ echo "root=/dev/sda2 rw nvidia-drm.modeset=1" > /etc/kernel/cmdline
 echo "=== Optimizing Dracut to Build Lean EFISTUB Images ==="
 mkdir -p /etc/dracut.conf.d
 cat << 'DRACUT_EOF' > /etc/dracut.conf.d/gentoo.conf
-# Build initramfs specific to current host hardware context only
 hostonly="yes"
-# Force highly efficient XZ compression to ensure EFISTUB size boundaries are respected
 compress="xz"
 DRACUT_EOF
 
 echo "=== Phase 1: Installing Firmware, Tools, & NVIDIA Modules ==="
-# Merging firmware and system tools first guarantees dependencies exist before the kernel compile hook fires
-emerge --ask=n sys-kernel/linux-firmware sys-boot/efibootmgr sys-kernel/installkernel sys-fs/xfsprogs x11-drivers/nvidia-drivers
+emerge --ask=n sys-kernel/linux-firmware sys-boot/efibootmgr sys-kernel/installkernel sys-fs/xfsprogs x11-drivers/nvidia-drivers app-admin/sudo
 
 echo "=== Phase 2: Building Kernel and Automating EFISTUB Generation ==="
-# Triggers dracut using the configuration rules above, registers with efibootmgr automatically
 emerge --ask=n sys-kernel/gentoo-kernel-bin
 
-echo "=== Setting root password to 'gentoo' ==="
+echo "=== Setting Passwords and Accounts ==="
 echo "root:gentoo" | chpasswd
+
+# Creating standard user account with proper groups for Wayland/seat management
+useradd -m -G wheel,video,audio,render -s /bin/bash richard
+echo "richard:gentoo" | chpasswd
+
+echo "=== Configuring Sudo ==="
+mkdir -p /etc/sudoers.d
+echo "%wheel ALL=(ALL:ALL) ALL" > /etc/sudoers.d/wheel
+# CRITICAL FIX: Sudo requires strict 0440 secure permissions or it will ignore the drop-in file entirely
+chmod 0440 /etc/sudoers.d/wheel
+
+echo "=== Configuring Networkd DHCP Profile ==="
+mkdir -p /etc/systemd/network
+cat << 'NET_EOF' > /etc/systemd/network/20-wired.network
+[Match]
+Name=en* eth*
+
+[Network]
+DHCP=yes
+NET_EOF
 
 echo "=== Systemd Post-Configuration Initialization ==="
 systemctl enable systemd-networkd.service
 systemctl enable systemd-resolved.service
+systemctl enable nvidia-persistenced.service
 
 echo "=== Installation complete inside the chroot! ==="
 CHROOT_EOF
@@ -169,4 +186,4 @@ umount -l "$CHROOT_DIR/dev{/shm,/pts,}" || true
 umount -R "$CHROOT_DIR"
 
 echo "Gentoo base installation complete! You can now safely reboot your machine."
-echo "Default root password is set to: gentoo"
+echo "Default passwords (root and richard): gentoo"
