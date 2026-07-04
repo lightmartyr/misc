@@ -39,17 +39,25 @@ mkdir -p "$CHROOT_DIR/efi"
 mount "$ESP_PART" "$CHROOT_DIR/efi"
 
 cd "$CHROOT_DIR"
-echo "Fetching latest Stage 3 systemd desktop tarball info..."
-STAGE3_FILE=$(curl -s "$STAGE3_URL" | grep -oE 'stage3-amd64-desktop-systemd-[0-9TZ]+.tar.xz' | head -n 1)
+
+echo "=== Fetching Latest Stage 3 File Info Safely ==="
+# Retrieve the static pointer file directly from the mirror to avoid brittle HTML scraping
+LATEST_TXT_URL="${STAGE3_URL}latest-stage3-amd64-desktop-systemd.txt"
+echo "Reading pointer from: ${LATEST_TXT_URL}"
+
+# Extract the filename from the first line that doesn't start with a hash comment (#)
+STAGE3_FILE=$(curl -sL "$LATEST_TXT_URL" | grep -v '^#' | awk '{print $1}' | head -n 1)
 
 if [ -z "$STAGE3_FILE" ]; then
-    echo "Failed to resolve Stage 3 filename. Checking baseline fallback..."
-    STAGE3_FILE=$(curl -s "${STAGE3_URL}" | grep -o 'stage3-amd64-desktop-systemd-[0-9]\+.*\.tar\.xz' | head -n 1)
+    echo "Error: Failed to dynamically resolve the Stage 3 filename via text pointer." >&2
+    exit 1
 fi
 
-echo "Downloading ${STAGE3_FILE}..."
-curl -O "${STAGE3_URL}${STAGE3_FILE}"
-echo "Unpacking Stage 3..."
+echo "Resolved target filename: ${STAGE3_FILE}"
+echo "Downloading ${STAGE3_URL}${STAGE3_FILE}..."
+curl -L -O "${STAGE3_URL}${STAGE3_FILE}"
+
+echo "Unpacking Stage 3 environment..."
 tar xpvf "$STAGE3_FILE" --xattrs-include='*.*' --numeric-owner
 rm "$STAGE3_FILE"
 
@@ -156,7 +164,7 @@ echo "richard:gentoo" | chpasswd
 echo "=== Configuring Sudo ==="
 mkdir -p /etc/sudoers.d
 echo "%wheel ALL=(ALL:ALL) ALL" > /etc/sudoers.d/wheel
-# CRITICAL FIX: Sudo requires strict 0440 secure permissions or it will ignore the drop-in file entirely
+# Sudo requires strict 0440 secure permissions or it will ignore the drop-in file entirely
 chmod 0440 /etc/sudoers.d/wheel
 
 echo "=== Configuring Networkd DHCP Profile ==="
