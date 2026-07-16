@@ -1,9 +1,0 @@
-{
-    "workbench.colorTheme": "NoctaliaTheme",
-    "editor.fontFamily": "'JetBrainsMono Nerd Font'",
-    "explorer.confirmDelete": false,
-    "workbench.iconTheme": "material-icon-theme",
-    "material-icon-theme.folders.color": "{{colors.primary.default.hex}}",
-    "material-icon-theme.rootFolders.color": "{{colors.primary.default.hex}}",
-    "material-icon-theme.files.color": "{{colors.primary.default.hex}}"
-}
